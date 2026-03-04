@@ -1,0 +1,20 @@
+spring:
+  datasource:
+    url: jdbc:tc:postgresql:16:///consentledger_test
+    username: test
+    password: test
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    clean-disabled: false
+    locations: classpath:db/migration
+
+app:
+  jwt:
+    secret: test-secret-key-that-is-at-least-256-bits-long-for-hmac-sha256-algorithm
+    expiration-ms: 60000
+    refresh-expiration-ms: 120000
+  audit:
+    genesis-hash: "0000000000000000000000000000000000000000000000000000000000000000"
