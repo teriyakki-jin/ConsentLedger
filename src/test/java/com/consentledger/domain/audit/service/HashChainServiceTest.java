@@ -21,6 +21,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class HashChainServiceTest {
@@ -67,10 +69,8 @@ class HashChainServiceTest {
     @Test
     @DisplayName("appendLog 호출 시 anchor가 잠기고 해시 체인이 연결된다")
     void appendLogBuildsChain() {
-        AuditChainAnchor mockAnchor = new AuditChainAnchor();
-        ReflectionTestUtils.setField(mockAnchor, "id", 1);
-        ReflectionTestUtils.setField(mockAnchor, "lastLogId", 0L);
-        ReflectionTestUtils.setField(mockAnchor, "lastHash", GENESIS_HASH);
+        AuditChainAnchor mockAnchor = mock(AuditChainAnchor.class);
+        when(mockAnchor.getLastHash()).thenReturn(GENESIS_HASH);
 
         given(anchorRepository.findAnchorForUpdate()).willReturn(Optional.of(mockAnchor));
         given(auditLogRepository.save(any(AuditLog.class))).willAnswer(invocation -> {

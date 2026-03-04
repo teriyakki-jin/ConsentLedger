@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 
@@ -14,13 +15,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class JwtTokenProviderTest {
 
+    private static final String SECRET = "test-secret-key-that-is-at-least-256-bits-long-for-hmac-sha256-algorithm";
+    private static final long EXPIRATION_MS = 3600000L;
+
     private JwtTokenProvider jwtTokenProvider;
-    private JwtConfig jwtConfig;
 
     @BeforeEach
     void setUp() {
-        jwtConfig = new JwtConfig();
-        // Reflection would be needed in real test; using a direct approach
+        JwtConfig jwtConfig = new JwtConfig();
+        ReflectionTestUtils.setField(jwtConfig, "secret", SECRET);
+        ReflectionTestUtils.setField(jwtConfig, "expirationMs", EXPIRATION_MS);
+        ReflectionTestUtils.setField(jwtConfig, "refreshExpirationMs", EXPIRATION_MS * 7);
+
         jwtTokenProvider = new JwtTokenProvider(jwtConfig);
     }
 
