@@ -21,6 +21,21 @@ const IconList = () => (
         <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
     </svg>
 )
+const IconUsers = () => (
+    <svg className="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+        <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+    </svg>
+)
+const IconRobot = () => (
+    <svg className="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1.323l3.954 1.582 1.599-.8a1 1 0 01.894 1.79l-1.233.616 1.738 5.42a1 1 0 01-.285 1.05A3.989 3.989 0 0115 14a3.989 3.989 0 01-2.667-1.019 1 1 0 01-.285-1.05l1.715-5.349L11 5.677V17h2a1 1 0 110 2H7a1 1 0 110-2h2V5.677L6.237 7.582l1.715 5.349a1 1 0 01-.285 1.05A3.989 3.989 0 015 15a3.989 3.989 0 01-2.667-1.019 1 1 0 01-.285-1.05l1.738-5.42-1.233-.616a1 1 0 01.894-1.79l1.599.8L9 4.323V3a1 1 0 011-1z" clipRule="evenodd" />
+    </svg>
+)
+const IconDocument = () => (
+    <svg className="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+    </svg>
+)
 
 export default function Layout({ children, title }: { children: React.ReactNode; title: string }) {
     const { email, role, logout } = useAuthStore()
@@ -59,9 +74,21 @@ export default function Layout({ children, title }: { children: React.ReactNode;
                     {role === 'ADMIN' && (
                         <>
                             <span className="sidebar-section">관리자</span>
+                            <NavLink to="/admin/users">
+                                <IconUsers />
+                                사용자 관리
+                            </NavLink>
+                            <NavLink to="/admin/agents">
+                                <IconRobot />
+                                에이전트 관리
+                            </NavLink>
                             <NavLink to="/admin/audit">
                                 <IconList />
                                 감사 로그
+                            </NavLink>
+                            <NavLink to="/admin/report">
+                                <IconDocument />
+                                감사 리포트
                             </NavLink>
                         </>
                     )}
