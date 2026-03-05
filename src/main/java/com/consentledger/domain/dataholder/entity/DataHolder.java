@@ -1,8 +1,9 @@
 package com.consentledger.domain.dataholder.entity;
 
-import com.consentledger.infra.persistence.converter.JsonbConverter;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -30,7 +31,7 @@ public class DataHolder {
     @Column(nullable = false, length = 255)
     private String name;
 
-    @Convert(converter = JsonbConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private List<String> supportedMethods;
 

@@ -39,7 +39,7 @@ public class AuditLog {
     @Column(nullable = false, length = 20)
     private String outcome;
 
-    @Column(columnDefinition = "jsonb")
+    @Column(columnDefinition = "text")
     private String payloadJson;
 
     @Column(nullable = false, length = 64)

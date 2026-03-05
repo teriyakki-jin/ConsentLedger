@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,7 +56,8 @@ public class HashChainService {
                 .orElseThrow(() -> new IllegalStateException("Audit chain anchor not found"));
 
         String prevHash = anchor.getLastHash();
-        Instant now = Instant.now();
+        // PostgreSQL은 마이크로초(6자리) 정밀도 → 절삭하여 DB 왕복 후에도 일관성 보장
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
         Map<String, Object> recordCore = buildRecordCore(
                 action,

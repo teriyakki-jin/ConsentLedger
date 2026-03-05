@@ -2,22 +2,28 @@ package com.consentledger.domain.audit.controller;
 
 import com.consentledger.domain.audit.dto.AuditLogResponse;
 import com.consentledger.domain.audit.dto.AuditVerifyResponse;
+import com.consentledger.domain.audit.entity.AuditLog;
 import com.consentledger.domain.audit.repository.AuditLogRepository;
 import com.consentledger.domain.audit.service.AuditReportService;
 import com.consentledger.domain.audit.service.HashChainService;
 import com.consentledger.global.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import java.time.Instant;
 import java.util.List;
@@ -43,9 +49,17 @@ public class AuditController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
 
+        Specification<AuditLog> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (action != null) predicates.add(cb.equal(root.get("action"), action));
+            if (objectType != null) predicates.add(cb.equal(root.get("objectType"), objectType));
+            if (from != null) predicates.add(cb.greaterThanOrEqualTo(root.get("ts"), from));
+            if (to != null) predicates.add(cb.lessThanOrEqualTo(root.get("ts"), to));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+
         PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "ts"));
-        Page<AuditLogResponse> result = auditLogRepository
-                .findWithFilters(action, objectType, from, to, pageable)
+        Page<AuditLogResponse> result = auditLogRepository.findAll(spec, pageable)
                 .map(AuditLogResponse::from);
 
         return ResponseEntity.ok(ApiResponse.ok(

@@ -54,4 +54,8 @@ public class Agent {
     public boolean isActive() {
         return this.status == AgentStatus.ACTIVE;
     }
+
+    public void changeStatus(AgentStatus newStatus) {
+        this.status = newStatus;
+    }
 }

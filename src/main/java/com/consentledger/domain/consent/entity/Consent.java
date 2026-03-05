@@ -3,9 +3,10 @@ package com.consentledger.domain.consent.entity;
 import com.consentledger.domain.agent.entity.Agent;
 import com.consentledger.domain.dataholder.entity.DataHolder;
 import com.consentledger.domain.user.entity.User;
-import com.consentledger.infra.persistence.converter.JsonbConverter;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -39,7 +40,7 @@ public class Consent {
     @JoinColumn(name = "data_holder_id", nullable = false)
     private DataHolder dataHolder;
 
-    @Convert(converter = JsonbConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb", nullable = false)
     private List<String> scopes;
 
