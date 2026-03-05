@@ -26,3 +26,11 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+ConsentLedger.docx
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.env.local
+
