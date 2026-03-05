@@ -18,6 +18,8 @@ build/
 *.env
 application-local.yml
 application-prod.yml
+id,password.txt
+*.docx
 
 # Logs
 logs/
