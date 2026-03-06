@@ -199,15 +199,15 @@ DB_NAME=consentledger
 DB_USERNAME=consentledger
 DB_PASSWORD=consentledger_pw
 
-# JWT
-JWT_SECRET=<your-secret>
+# JWT (필수 - 미설정 시 앱 시작 불가, 최소 32바이트)
+JWT_SECRET=<your-secret-at-least-32-bytes>
 
 # CORS
 CORS_ORIGIN_1=http://localhost:3000
 CORS_ORIGIN_2=http://localhost:5173
 ```
 
-> 운영 환경에서는 `JWT_SECRET`, DB 계정, CORS, API Key 관리 전략을 반드시 별도로 강화하세요.
+> `JWT_SECRET`은 환경변수로 **반드시** 주입해야 합니다 (기본값 없음). 운영 환경에서는 DB 계정, CORS, API Key 관리 전략도 별도로 강화하세요.
 
 ---
 
@@ -217,4 +217,4 @@ CORS_ORIGIN_2=http://localhost:5173
 ./gradlew test
 ```
 
-단위 테스트 18개 포함 (HashChainService, TransferStateMachine, JwtTokenProvider).
+단위 테스트 63개 포함. 통합 테스트(26개)는 Docker 환경에서 `./gradlew test -Dintegration.tests.enabled=true` 로 실행.
