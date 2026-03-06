@@ -40,7 +40,7 @@ server:
 
 app:
   jwt:
-    secret: ${JWT_SECRET:consentledger-default-secret-key-must-be-at-least-256bits-long}
+    secret: ${JWT_SECRET}
     expiration-ms: 3600000
     refresh-expiration-ms: 604800000
 

@@ -40,9 +40,29 @@ public class TransferRequestService {
 
     @Transactional
     public TransferResponse create(TransferCreateRequest request) {
-        // Idempotency 키 중복 확인
+        UUID actorUserId = null;
+        UUID actorAgentId = null;
+        User requesterUser = null;
+        Agent requesterAgent = null;
+
+        if (SecurityUtils.isAgent()) {
+            Agent agent = SecurityUtils.getCurrentAgent()
+                    .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_API_KEY));
+            agentPolicyValidator.validate(agent.getId(), request.getMethod());
+            actorAgentId = agent.getId();
+            requesterAgent = agent;
+        } else {
+            UUID userId = SecurityUtils.getCurrentUserId()
+                    .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_TOKEN));
+            actorUserId = userId;
+            requesterUser = userRepository.findById(userId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        }
+
+        // Idempotency 키 중복 확인 (반드시 호출자 소유 검증 후 반환)
         Optional<TransferRequest> existing = transferRepository.findByIdempotencyKey(request.getIdempotencyKey());
         if (existing.isPresent()) {
+            validateIdempotencyOwnershipAndRequest(existing.get(), actorUserId, actorAgentId, request);
             return TransferResponse.from(existing.get());
         }
 
@@ -59,26 +79,8 @@ public class TransferRequestService {
                     "Data holder does not support method: " + request.getMethod());
         }
 
-        UUID actorUserId = null;
-        UUID actorAgentId = null;
-        User requesterUser = null;
-        Agent requesterAgent = null;
-
-        if (SecurityUtils.isAgent()) {
-            Agent agent = SecurityUtils.getCurrentAgent()
-                    .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_API_KEY));
-            agentPolicyValidator.validate(agent.getId(), request.getMethod());
-            actorAgentId = agent.getId();
-            requesterAgent = agent;
-        } else {
-            UUID userId = SecurityUtils.getCurrentUserId()
-                    .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_TOKEN));
-            if (!consent.getUser().getId().equals(userId)) {
-                throw new BusinessException(ErrorCode.TRANSFER_ACCESS_DENIED);
-            }
-            actorUserId = userId;
-            requesterUser = userRepository.findById(userId)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (actorUserId != null && !consent.getUser().getId().equals(actorUserId)) {
+            throw new BusinessException(ErrorCode.TRANSFER_ACCESS_DENIED);
         }
 
         try {
@@ -102,7 +104,7 @@ public class TransferRequestService {
 
         } catch (DataIntegrityViolationException e) {
             // 동시 요청으로 unique 위반 시 새 트랜잭션에서 기존 레코드 반환
-            return findByIdempotencyKeyInNewTransaction(request.getIdempotencyKey());
+            return findByIdempotencyKeyInNewTransaction(request.getIdempotencyKey(), actorUserId, actorAgentId, request);
         }
     }
 
@@ -111,10 +113,38 @@ public class TransferRequestService {
      * REQUIRES_NEW로 새 트랜잭션에서 조회한다.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
-    public TransferResponse findByIdempotencyKeyInNewTransaction(String idempotencyKey) {
+    public TransferResponse findByIdempotencyKeyInNewTransaction(String idempotencyKey,
+                                                                 UUID actorUserId,
+                                                                 UUID actorAgentId,
+                                                                 TransferCreateRequest request) {
         return transferRepository.findByIdempotencyKey(idempotencyKey)
-                .map(TransferResponse::from)
+                .map(existing -> {
+                    validateIdempotencyOwnershipAndRequest(existing, actorUserId, actorAgentId, request);
+                    return TransferResponse.from(existing);
+                })
                 .orElseThrow(() -> new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT));
+    }
+
+    private void validateIdempotencyOwnershipAndRequest(TransferRequest existing,
+                                                        UUID actorUserId,
+                                                        UUID actorAgentId,
+                                                        TransferCreateRequest request) {
+        boolean ownerMatch = false;
+        if (actorUserId != null && existing.getRequesterUser() != null) {
+            ownerMatch = existing.getRequesterUser().getId().equals(actorUserId);
+        }
+        if (actorAgentId != null && existing.getRequesterAgent() != null) {
+            ownerMatch = existing.getRequesterAgent().getId().equals(actorAgentId);
+        }
+        if (!ownerMatch) {
+            throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
+        }
+
+        boolean sameConsent = existing.getConsent().getId().equals(request.getConsentId());
+        boolean sameMethod = existing.getMethod().equals(request.getMethod());
+        if (!sameConsent || !sameMethod) {
+            throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
+        }
     }
 
     @Transactional(readOnly = true)

@@ -126,10 +126,30 @@ class TransferRequestServiceTest {
 
         given(transferRepository.findByIdempotencyKey(idempotencyKey))
                 .willReturn(Optional.of(existing));
+        given(userRepository.findById(user.getId())).willReturn(Optional.of(user));
 
         TransferResponse response = service.create(buildRequest(consent.getId(), "PULL", idempotencyKey));
 
         assertThat(response.getIdempotencyKey()).isEqualTo(existing.getIdempotencyKey());
+    }
+
+    @Test
+    @DisplayName("다른 호출자의 멱등성 키 충돌 시 IDEMPOTENCY_CONFLICT")
+    void create_existingIdempotencyKey_byDifferentActor_throwsConflict() {
+        User otherUser = UserFixture.user();
+        setUserContext(otherUser);
+        String idempotencyKey = "existing-key";
+        TransferRequest existing = TransferRequestFixture.requested(consent, user);
+
+        given(transferRepository.findByIdempotencyKey(idempotencyKey))
+                .willReturn(Optional.of(existing));
+        given(userRepository.findById(otherUser.getId())).willReturn(Optional.of(otherUser));
+
+        assertThatThrownBy(() ->
+                service.create(buildRequest(consent.getId(), "PULL", idempotencyKey)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.IDEMPOTENCY_CONFLICT);
     }
 
     @Test
@@ -139,6 +159,7 @@ class TransferRequestServiceTest {
         String idempotencyKey = "key-" + UUID.randomUUID();
 
         given(transferRepository.findByIdempotencyKey(idempotencyKey)).willReturn(Optional.empty());
+        given(userRepository.findById(user.getId())).willReturn(Optional.of(user));
         given(consentRepository.findActiveById(consent.getId())).willReturn(Optional.empty());
 
         assertThatThrownBy(() ->
@@ -155,6 +176,7 @@ class TransferRequestServiceTest {
         String idempotencyKey = "key-" + UUID.randomUUID();
 
         given(transferRepository.findByIdempotencyKey(idempotencyKey)).willReturn(Optional.empty());
+        given(userRepository.findById(user.getId())).willReturn(Optional.of(user));
         given(consentRepository.findActiveById(consent.getId())).willReturn(Optional.of(consent));
 
         assertThatThrownBy(() ->
@@ -172,6 +194,7 @@ class TransferRequestServiceTest {
         String idempotencyKey = "key-" + UUID.randomUUID();
 
         given(transferRepository.findByIdempotencyKey(idempotencyKey)).willReturn(Optional.empty());
+        given(userRepository.findById(otherUser.getId())).willReturn(Optional.of(otherUser));
         given(consentRepository.findActiveById(consent.getId())).willReturn(Optional.of(consent));
 
         assertThatThrownBy(() ->
