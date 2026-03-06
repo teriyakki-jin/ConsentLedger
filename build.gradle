@@ -76,5 +76,6 @@ dependencyManagement {
 
 tasks.named('test') {
     useJUnitPlatform()
+    systemProperties System.properties
 }
 

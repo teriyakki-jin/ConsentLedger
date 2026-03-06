@@ -1,10 +1,13 @@
 package com.consentledger.domain.audit.service;
 
+import com.consentledger.domain.audit.dto.AuditVerifyResponse;
 import com.consentledger.domain.audit.entity.AuditChainAnchor;
 import com.consentledger.domain.audit.entity.AuditLog;
 import com.consentledger.domain.audit.repository.AuditChainAnchorRepository;
 import com.consentledger.domain.audit.repository.AuditLogRepository;
+import com.consentledger.fixture.AuditLogFixture;
 import com.consentledger.global.util.HashUtils;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,6 +17,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,12 +39,17 @@ class HashChainServiceTest {
     @Mock
     private AuditLogRepository auditLogRepository;
 
+    @Mock
+    private EntityManager entityManager;
+
     @InjectMocks
     private HashChainService hashChainService;
 
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(hashChainService, "genesisHash", GENESIS_HASH);
+        // @PersistenceContext fields are not injected by Mockito automatically
+        ReflectionTestUtils.setField(hashChainService, "entityManager", entityManager);
     }
 
     @Test
@@ -87,5 +96,67 @@ class HashChainServiceTest {
         assertThat(result.getPrevHash()).isEqualTo(GENESIS_HASH);
         assertThat(result.getHash()).hasSize(64);
         assertThat(result.getHash()).isNotEqualTo(GENESIS_HASH);
+    }
+
+    // ── verifyChain() tests ──────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("모든 체인이 유효한 경우 valid=true 반환")
+    void verifyChain_allValid_returnsTrue() {
+        AuditLog log1 = AuditLogFixture.firstLog();
+        AuditLog log2 = AuditLogFixture.nextLog(log1, 2L);
+
+        given(auditLogRepository.findBatchAfter(0L, 1000)).willReturn(List.of(log1, log2));
+        given(auditLogRepository.count()).willReturn(2L);
+
+        AuditVerifyResponse response = hashChainService.verifyChain();
+
+        assertThat(response.isValid()).isTrue();
+        assertThat(response.getVerifiedCount()).isEqualTo(2);
+        assertThat(response.getTotalLogs()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("payload_hash 불일치 시 valid=false, 첫 번째 손상 로그 ID 반환")
+    void verifyChain_payloadHashMismatch_returnsFirstBroken() {
+        AuditLog validLog = AuditLogFixture.firstLog();
+        AuditLog brokenLog = AuditLogFixture.withBrokenPayloadHash(
+                AuditLogFixture.nextLog(validLog, 2L));
+
+        given(auditLogRepository.findBatchAfter(0L, 1000)).willReturn(List.of(validLog, brokenLog));
+        given(auditLogRepository.count()).willReturn(2L);
+
+        AuditVerifyResponse response = hashChainService.verifyChain();
+
+        assertThat(response.isValid()).isFalse();
+        assertThat(response.getFirstBrokenLogId()).isEqualTo(2L);
+        assertThat(response.getReason()).contains("payload_hash");
+    }
+
+    @Test
+    @DisplayName("prev_hash 불일치 시 valid=false, 첫 번째 손상 로그 ID 반환")
+    void verifyChain_prevHashMismatch_returnsFirstBroken() {
+        AuditLog brokenLog = AuditLogFixture.withBrokenPrevHash(AuditLogFixture.firstLog());
+
+        given(auditLogRepository.findBatchAfter(0L, 1000)).willReturn(List.of(brokenLog));
+        given(auditLogRepository.count()).willReturn(1L);
+
+        AuditVerifyResponse response = hashChainService.verifyChain();
+
+        assertThat(response.isValid()).isFalse();
+        assertThat(response.getFirstBrokenLogId()).isEqualTo(1L);
+        assertThat(response.getReason()).contains("prev_hash");
+    }
+
+    @Test
+    @DisplayName("감사 로그가 없을 때 valid=true 반환")
+    void verifyChain_emptyLog_returnsValid() {
+        given(auditLogRepository.findBatchAfter(0L, 1000)).willReturn(List.of());
+        given(auditLogRepository.count()).willReturn(0L);
+
+        AuditVerifyResponse response = hashChainService.verifyChain();
+
+        assertThat(response.isValid()).isTrue();
+        assertThat(response.getVerifiedCount()).isEqualTo(0);
     }
 }
