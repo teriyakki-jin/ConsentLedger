@@ -21,6 +21,7 @@ configurations {
 
 repositories {
     mavenCentral()
+    maven { url 'https://repo.spring.io/milestone' }
 }
 
 dependencies {
@@ -50,6 +51,10 @@ dependencies {
     implementation 'com.itextpdf:itext-core:8.0.4'
     implementation 'com.itextpdf:layout:8.0.4'
 
+    // Spring AI - MCP Server + OpenAI
+    implementation 'org.springframework.ai:spring-ai-starter-mcp-server-webmvc'
+    implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+
     // Lombok
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
@@ -71,6 +76,7 @@ dependencies {
 dependencyManagement {
     imports {
         mavenBom "org.testcontainers:testcontainers-bom:1.20.3"
+        mavenBom "org.springframework.ai:spring-ai-bom:1.0.0"
     }
 }
 
@@ -78,4 +84,3 @@ tasks.named('test') {
     useJUnitPlatform()
     systemProperties System.properties
 }
-
