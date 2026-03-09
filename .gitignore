@@ -9,6 +9,9 @@ build/
 .vscode/
 *.eclipse
 
+# Claude Code
+.claude/
+
 # Spring Boot
 *.jar
 !gradle/wrapper/gradle-wrapper.jar
