@@ -1,0 +1,14 @@
+build/
+.gradle/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+.git/
+.idea/
+.vscode/
+.claude/
+*.md
+*.log
+logs/
+*.env
+.env
