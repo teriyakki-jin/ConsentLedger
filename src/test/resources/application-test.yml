@@ -10,8 +10,6 @@ spring:
   flyway:
     clean-disabled: false
     locations: classpath:db/migration
-
-spring:
   ai:
     openai:
       api-key: dummy-api-key-for-tests
