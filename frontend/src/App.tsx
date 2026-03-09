@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import ErrorBoundary from './components/ErrorBoundary'
 import { useAuthStore } from './store/auth.store'
 import { jwtDecode } from './utils/jwt'
 import LoginPage from './pages/LoginPage'
@@ -11,6 +12,7 @@ import AuditPage from './pages/admin/AuditPage'
 import UsersPage from './pages/admin/UsersPage'
 import AgentsPage from './pages/admin/AgentsPage'
 import ReportPage from './pages/admin/ReportPage'
+import McpPage from './pages/admin/McpPage'
 
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
   const { token, role, logout } = useAuthStore()
@@ -30,6 +32,7 @@ export default function App() {
   const { token } = useAuthStore()
 
   return (
+    <ErrorBoundary>
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={token ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
@@ -64,9 +67,13 @@ export default function App() {
         <Route path="/admin/report" element={
           <ProtectedRoute adminOnly><ReportPage /></ProtectedRoute>
         } />
+        <Route path="/admin/mcp" element={
+          <ProtectedRoute adminOnly><McpPage /></ProtectedRoute>
+        } />
 
         <Route path="*" element={<Navigate to={token ? '/dashboard' : '/login'} replace />} />
       </Routes>
     </BrowserRouter>
+    </ErrorBoundary>
   )
 }

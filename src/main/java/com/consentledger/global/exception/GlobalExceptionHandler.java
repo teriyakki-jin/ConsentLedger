@@ -1,6 +1,7 @@
 package com.consentledger.global.exception;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
@@ -30,6 +31,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(ErrorCode.VALIDATION_ERROR.getHttpStatus())
                 .body(ErrorResponse.of(ErrorCode.VALIDATION_ERROR, fieldErrors));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadableException(HttpMessageNotReadableException e) {
+        return ResponseEntity
+                .status(ErrorCode.VALIDATION_ERROR.getHttpStatus())
+                .body(ErrorResponse.of(ErrorCode.VALIDATION_ERROR, "요청 형식이 올바르지 않습니다. UUID와 날짜 형식을 확인하세요."));
     }
 
     @ExceptionHandler(AuthenticationException.class)
