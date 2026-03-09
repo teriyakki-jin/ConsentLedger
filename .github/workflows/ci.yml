@@ -43,6 +43,7 @@ jobs:
         run: ./gradlew test -Dintegration.tests.enabled=true --no-daemon
         env:
           JWT_SECRET: ci-test-secret-key-that-is-at-least-256-bits-long-for-hmac
+          OPENAI_API_KEY: dummy-api-key-for-ci
 
       - name: Upload test reports
         uses: actions/upload-artifact@v4

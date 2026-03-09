@@ -11,6 +11,11 @@ spring:
     clean-disabled: false
     locations: classpath:db/migration
 
+spring:
+  ai:
+    openai:
+      api-key: dummy-api-key-for-tests
+
 app:
   jwt:
     secret: test-secret-key-that-is-at-least-256-bits-long-for-hmac-sha256-algorithm
