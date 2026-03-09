@@ -4,6 +4,7 @@
 
 ![Java](https://img.shields.io/badge/Java-17-007396?style=flat-square&logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.3-6DB33F?style=flat-square&logo=springboot)
+![Spring AI](https://img.shields.io/badge/Spring_AI-1.0.0-6DB33F?style=flat-square&logo=spring)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql)
 ![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript)
@@ -19,6 +20,8 @@ ConsentLedger는 **개인정보보호법상 개인정보 전송요구권(마이�
 - 전송 요청 생성 / 사용자 승인 / 실행
 - **SHA-256 해시 체인** 기반 감사 로그 무결성 검증
 - 관리자 감사 로그 조회 및 PDF 리포트 다운로드
+- **Spring AI MCP 서버** 통합 — Claude Desktop 등 AI 클라이언트와 직접 연결
+- **AI 이상 탐지** — Claude Sonnet으로 감사 로그에서 보안 위협 자동 분석
 
 > 운영 환경이 아닌 흐름 검증 목적의 샘플 구현입니다.
 
@@ -29,6 +32,7 @@ ConsentLedger는 **개인정보보호법상 개인정보 전송요구권(마이�
 | 영역 | 기술 |
 |------|------|
 | Backend | Java 17, Spring Boot 3.3, Spring Security, Spring Data JPA, Flyway |
+| AI / MCP | Spring AI 1.0.0, MCP Server (SSE), Claude Sonnet |
 | Database | PostgreSQL 16 |
 | API Docs | springdoc-openapi (Swagger UI) |
 | Frontend | React 19, TypeScript, Vite, Zustand, Axios |
@@ -39,20 +43,22 @@ ConsentLedger는 **개인정보보호법상 개인정보 전송요구권(마이�
 ## Architecture
 
 ```
-┌─────────────┐     JWT / API Key     ┌──────────────────────┐
-│  Frontend   │ ─────────────────────▶│  Spring Boot Backend │
-│ React/Vite  │                       │                      │
-│ :5173       │ ◀─────────────────────│  - AuthFilter        │
-└─────────────┘    JSON Response      │  - ConsentService    │
-                                      │  - TransferService   │
-                                      │  - AuditService      │
-                                      └──────────┬───────────┘
-                                                 │ JPA
-                                      ┌──────────▼───────────┐
-                                      │   PostgreSQL 16       │
-                                      │   - SHA-256 Hash Chain│
-                                      │   - Flyway V1~V11    │
-                                      └──────────────────────┘
+┌─────────────┐     JWT / API Key     ┌──────────────────────────────┐
+│  Frontend   │ ─────────────────────▶│      Spring Boot Backend     │
+│ React/Vite  │                       │                              │
+│ :5173       │ ◀─────────────────────│  - AuthFilter (JWT + APIKey) │
+└─────────────┘    JSON Response      │  - ConsentService            │
+                                      │  - TransferService           │
+┌─────────────┐     SSE / MCP        │  - AuditService (Hash Chain) │
+│Claude Desktop│ ─────────────────────▶│  - MCP Server (Spring AI)   │
+│  / AI Client│                       │  - AnomalyDetectionService   │
+└─────────────┘                       └──────────┬───────────────────┘
+                                                  │ JPA
+                                       ┌──────────▼──────────┐
+                                       │   PostgreSQL 16      │
+                                       │  SHA-256 Hash Chain  │
+                                       │  Flyway V1~V11       │
+                                       └─────────────────────┘
 ```
 
 **인증 방식**
@@ -62,6 +68,10 @@ ConsentLedger는 **개인정보보호법상 개인정보 전송요구권(마이�
 **감사 로그 무결성**
 - 각 로그 행의 SHA-256 해시가 이전 행 해시를 포함 → 해시 체인 형성
 - `GET /admin/audit-logs/verify` 로 전체 체인 검증 가능
+
+**MCP 서버**
+- SSE 엔드포인트: `GET /sse` (ADMIN JWT 필요)
+- 등록 도구: `getAuditLogs`, `verifyAuditChain`, `getConsentsByUser`, `getTransferRequests`, `listUsers`, `analyzeAnomalies`
 
 ---
 
@@ -75,17 +85,18 @@ ConsentLedger/
 │   │   │   ├── domain/
 │   │   │   │   ├── auth/          # JWT 인증
 │   │   │   │   ├── consent/       # 동의 관리
-│   │   │   │   ├── transfer/      # 전송 요청
-│   │   │   │   ├── audit/         # 감사 로그 + 해시 체인
-│   │   │   │   ├── admin/         # 관리자 기능
+│   │   │   │   ├── transfer/      # 전송 요청 상태 머신
+│   │   │   │   ├── audit/         # 감사 로그 + 해시 체인 + AI 이상 탐지
+│   │   │   │   ├── admin/         # 관리자 기능 + MCP 관리 API
 │   │   │   │   ├── agent/         # API Key 인증 Agent
 │   │   │   │   ├── user/
-│   │   │   │   └── dataholder/
+│   │   │   │   └── dataholder/    # 데이터 보유자 관리
+│   │   │   ├── mcp/               # Spring AI MCP 서버 설정 + 도구 클래스
 │   │   │   └── global/            # config, security, exception, dto, util
 │   │   └── resources/
 │   │       ├── application.yml
 │   │       └── db/migration/      # Flyway SQL (V1~V11)
-│   └── test/
+│   └── test/                      # 단위 + 통합 테스트
 ├── frontend/                      # React + Vite
 ├── docker-compose.yml
 └── build.gradle
@@ -117,6 +128,7 @@ docker compose up -d
 | API Server | `http://localhost:8080` |
 | Swagger UI | `http://localhost:8080/swagger-ui` |
 | OpenAPI JSON | `http://localhost:8080/api-docs` |
+| MCP SSE | `http://localhost:8080/sse` (ADMIN JWT 필요) |
 
 ### 3. Frontend 실행
 
@@ -174,6 +186,12 @@ Flyway seed(`V9__seed_data.sql`)로 아래 계정 및 데이터가 자동 생성
 | POST | `/transfer-requests/{id}/approve` | USER | 사용자 승인 |
 | POST | `/transfer-requests/{id}/execute` | AGENT | 실행 |
 
+### Data Holders
+
+| Method | Path | 권한 | 설명 |
+|--------|------|------|------|
+| GET | `/data-holders` | USER | 데이터 보유자 목록 |
+
 ### Admin
 
 | Method | Path | 설명 |
@@ -183,13 +201,20 @@ Flyway seed(`V9__seed_data.sql`)로 아래 계정 및 데이터가 자동 생성
 | PATCH | `/admin/agents/{id}/status` | Agent 상태 변경 |
 | GET | `/admin/audit-logs` | 감사 로그 조회 |
 | GET | `/admin/audit-logs/verify` | 해시 체인 무결성 검증 |
+| GET | `/admin/audit-logs/analyze?days=7` | AI 이상 탐지 분석 |
 | GET | `/admin/reports/audit?from=...&to=...` | PDF 리포트 다운로드 |
+| GET | `/admin/mcp` | MCP 서버 상태 및 등록 도구 목록 |
+| POST | `/admin/mcp/invoke` | MCP 도구 수동 실행 |
+
+### MCP Server
+
+| 엔드포인트 | 설명 |
+|-----------|------|
+| `GET /sse` | MCP SSE 스트림 (ADMIN JWT 필요) |
 
 ---
 
 ## Environment Variables
-
-`src/main/resources/application.yml` 기준 주요 환경 변수입니다.
 
 ```yaml
 # DB
@@ -205,16 +230,48 @@ JWT_SECRET=<your-secret-at-least-32-bytes>
 # CORS
 CORS_ORIGIN_1=http://localhost:3000
 CORS_ORIGIN_2=http://localhost:5173
+
+# AI 이상 탐지 + MCP (선택 - 미설정 시 AI 기능 비활성)
+OPENAI_API_KEY=<your-openai-api-key>
 ```
 
-> `JWT_SECRET`은 환경변수로 **반드시** 주입해야 합니다 (기본값 없음). 운영 환경에서는 DB 계정, CORS, API Key 관리 전략도 별도로 강화하세요.
+> `JWT_SECRET`은 환경변수로 **반드시** 주입해야 합니다 (기본값 없음).
+> `OPENAI_API_KEY` 미설정 시 이상 탐지 및 MCP 도구가 graceful degradation으로 동작합니다.
+
+---
+
+## MCP 연동 (Claude Desktop)
+
+`claude_desktop_config.json`에 아래를 추가하면 Claude Desktop에서 ConsentLedger 도구를 직접 사용할 수 있습니다.
+
+```json
+{
+  "mcpServers": {
+    "consentledger": {
+      "transport": "sse",
+      "url": "http://localhost:8080/sse",
+      "headers": {
+        "Authorization": "Bearer <ADMIN_JWT_TOKEN>"
+      }
+    }
+  }
+}
+```
 
 ---
 
 ## Test
 
 ```bash
+# 단위 테스트 (119개)
 ./gradlew test
+
+# 통합 테스트 (Docker 필요, 26개)
+./gradlew test -Dintegration.tests.enabled=true
 ```
 
-단위 테스트 63개 포함. 통합 테스트(26개)는 Docker 환경에서 `./gradlew test -Dintegration.tests.enabled=true` 로 실행.
+| 테스트 종류 | 수량 | 비고 |
+|-----------|------|------|
+| 단위 테스트 | 119개 | Mockito, @WebMvcTest |
+| 통합 테스트 | 26개 | Testcontainers PostgreSQL |
+| E2E 테스트 | 4 시나리오 | Playwright |
