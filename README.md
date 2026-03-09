@@ -8,6 +8,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql)
 ![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript)
+![CI](https://github.com/teriyakki-jin/ConsentLedger/actions/workflows/ci.yml/badge.svg)
 
 ---
 
@@ -36,7 +37,7 @@ ConsentLedger는 **개인정보보호법상 개인정보 전송요구권(마이�
 | Database | PostgreSQL 16 |
 | API Docs | springdoc-openapi (Swagger UI) |
 | Frontend | React 19, TypeScript, Vite, Zustand, Axios |
-| Infra | Docker Compose (PostgreSQL + pgAdmin) |
+| Infra | Docker Compose, Dockerfile (multi-stage), GitHub Actions CI |
 
 ---
 
@@ -95,10 +96,15 @@ ConsentLedger/
 │   │   │   └── global/            # config, security, exception, dto, util
 │   │   └── resources/
 │   │       ├── application.yml
+│   │       ├── application-prod.yml.example  # 운영 환경 설정 템플릿
+│   │       ├── logback-spring.xml            # 프로필별 로깅 전략
 │   │       └── db/migration/      # Flyway SQL (V1~V11)
 │   └── test/                      # 단위 + 통합 테스트
 ├── frontend/                      # React + Vite
 ├── docker-compose.yml
+├── Dockerfile                     # Multi-stage 빌드 (JDK→JRE, 비루트 실행)
+├── .dockerignore
+├── .github/workflows/ci.yml       # GitHub Actions CI (단위+통합 테스트, Docker 빌드)
 └── build.gradle
 ```
 
@@ -227,9 +233,8 @@ DB_PASSWORD=consentledger_pw
 # JWT (필수 - 미설정 시 앱 시작 불가, 최소 32바이트)
 JWT_SECRET=<your-secret-at-least-32-bytes>
 
-# CORS
-CORS_ORIGIN_1=http://localhost:3000
-CORS_ORIGIN_2=http://localhost:5173
+# CORS (콤마 구분)
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 
 # AI 이상 탐지 + MCP (선택 - 미설정 시 AI 기능 비활성)
 OPENAI_API_KEY=<your-openai-api-key>
@@ -257,6 +262,36 @@ OPENAI_API_KEY=<your-openai-api-key>
   }
 }
 ```
+
+---
+
+## Docker
+
+```bash
+# 이미지 빌드
+docker build -t consentledger:latest .
+
+# 컨테이너 실행
+docker run -p 8080:8080 \
+  -e JWT_SECRET=<32바이트_이상_시크릿> \
+  -e DB_HOST=host.docker.internal \
+  -e DB_USERNAME=consentledger \
+  -e DB_PASSWORD=consentledger_pw \
+  consentledger:latest
+```
+
+> 운영 환경 설정은 `src/main/resources/application-prod.yml.example`을 참고해 `application-prod.yml`을 작성하세요.
+
+---
+
+## CI/CD
+
+`main` 브랜치에 push 또는 PR 시 GitHub Actions가 자동 실행됩니다.
+
+| Job | 조건 | 내용 |
+|-----|------|------|
+| test | 모든 push/PR | 단위 테스트 + 통합 테스트 (Testcontainers) |
+| build-docker | main push + test 성공 | Docker 이미지 빌드 검증 |
 
 ---
 
