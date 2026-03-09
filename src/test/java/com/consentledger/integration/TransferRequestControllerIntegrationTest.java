@@ -122,8 +122,8 @@ class TransferRequestControllerIntegrationTest extends BaseControllerIntegration
     }
 
     @Test
-    @DisplayName("POST /transfer-requests - 403 Forbidden (no token)")
-    void createTransferRequest_noAuth_returns403() throws Exception {
+    @DisplayName("POST /transfer-requests - 401 Unauthorized (no token)")
+    void createTransferRequest_noAuth_returns401() throws Exception {
         mockMvc.perform(post("/transfer-requests")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -131,7 +131,7 @@ class TransferRequestControllerIntegrationTest extends BaseControllerIntegration
                                 "method", "PULL",
                                 "idempotencyKey", "idem-" + UUID.randomUUID()
                         ))))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

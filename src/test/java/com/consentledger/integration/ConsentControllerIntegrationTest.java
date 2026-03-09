@@ -96,10 +96,10 @@ class ConsentControllerIntegrationTest extends BaseControllerIntegrationTest {
     }
 
     @Test
-    @DisplayName("GET /consents - 403 Forbidden (no token)")
-    void listConsents_noAuth_returns403() throws Exception {
+    @DisplayName("GET /consents - 401 Unauthorized (no token)")
+    void listConsents_noAuth_returns401() throws Exception {
         mockMvc.perform(get("/consents"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
