@@ -16,11 +16,43 @@ export interface AgentSummary {
     createdAt: string
 }
 
+export interface McpToolSummary {
+    name: string
+    description: string
+    sourceClass: string
+}
+
+export interface McpServerStatus {
+    serverName: string
+    serverVersion: string
+    transport: string
+    sseEndpoint: string
+    messageEndpointTemplate: string
+    adminProtected: boolean
+    registeredTools: number
+    tools: McpToolSummary[]
+}
+
+export interface McpInvokeResponse {
+    toolName: string
+    executedAt: string
+    output: string
+}
+
 export const getUsers = () =>
     client.get<{ data: UserSummary[] }>('/admin/users').then((r) => r.data.data)
 
 export const getAgents = () =>
     client.get<{ data: AgentSummary[] }>('/admin/agents').then((r) => r.data.data)
+
+export const getMcpStatus = () =>
+    client.get<{ data: McpServerStatus }>('/admin/mcp').then((r) => r.data.data)
+
+export const invokeMcpTool = (toolName: string, params?: Record<string, unknown>) =>
+    client.post<{ data: McpInvokeResponse }>('/admin/mcp/invoke', {
+        toolName,
+        params: params ?? {},
+    }).then((r) => r.data.data)
 
 const UUID_RE = /^[\w-]+$/
 
