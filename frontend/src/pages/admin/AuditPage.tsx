@@ -1,5 +1,12 @@
 import { useEffect, useState, useCallback } from 'react'
-import { getAuditLogs, verifyAuditChain, type AuditLogResponse, type AuditVerifyResponse } from '../../api/audit'
+import {
+    getAuditLogs,
+    verifyAuditChain,
+    tamperLog,
+    type AuditLogResponse,
+    type AuditVerifyResponse,
+    type TamperResult,
+} from '../../api/audit'
 import Layout from '../../components/Layout'
 import { Spinner, EmptyState } from '../../components/Spinner'
 import { formatDate } from '../../utils/jwt'
@@ -10,8 +17,10 @@ export default function AuditPage() {
     const [loading, setLoading] = useState(true)
     const [verifying, setVerifying] = useState(false)
     const [verify, setVerify] = useState<AuditVerifyResponse | null>(null)
+    const [tampering, setTampering] = useState(false)
+    const [tamperResult, setTamperResult] = useState<TamperResult | null>(null)
+    const [selectedLogId, setSelectedLogId] = useState<number | null>(null)
 
-    // Filters
     const [action, setAction] = useState('')
     const [objectType, setObjectType] = useState('')
     const [page, setPage] = useState(0)
@@ -27,6 +36,7 @@ export default function AuditPage() {
 
     const handleVerify = async () => {
         setVerifying(true)
+        setTamperResult(null)
         try {
             const result = await verifyAuditChain()
             setVerify(result)
@@ -35,7 +45,29 @@ export default function AuditPage() {
         }
     }
 
+    const handleTamper = async () => {
+        if (!selectedLogId) return
+        setTampering(true)
+        setVerify(null)
+        setTamperResult(null)
+        try {
+            const result = await tamperLog(selectedLogId)
+            setTamperResult(result)
+            load()
+        } finally {
+            setTampering(false)
+        }
+    }
+
     const totalPages = Math.ceil(meta.total / meta.size)
+    const brokenId = tamperResult?.firstBrokenId ?? verify?.firstBrokenLogId
+
+    const rowStyle = (log: AuditLogResponse): React.CSSProperties => {
+        if (!brokenId || brokenId < 0) return {}
+        if (log.id === brokenId) return { background: 'rgba(248,81,73,0.18)', outline: '1px solid var(--red)' }
+        if (log.id > brokenId) return { background: 'rgba(248,81,73,0.06)', opacity: 0.6 }
+        return {}
+    }
 
     return (
         <Layout title="감사 로그">
@@ -57,14 +89,21 @@ export default function AuditPage() {
                     />
                     <button className="btn btn-secondary btn-sm" onClick={load}>검색</button>
                 </div>
-                <div className="toolbar-right">
+                <div className="toolbar-right" style={{ gap: '8px' }}>
                     <button
-                        id="btn-verify"
                         className="btn btn-secondary"
                         onClick={handleVerify}
-                        disabled={verifying}
+                        disabled={verifying || tampering}
                     >
-                        {verifying ? '검증 중...' : '🔒 무결성 검증'}
+                        {verifying ? '검증 중…' : '🔒 무결성 검증'}
+                    </button>
+                    <button
+                        className="btn btn-danger"
+                        onClick={handleTamper}
+                        disabled={!selectedLogId || tampering || verifying}
+                        title={selectedLogId ? `ID ${selectedLogId} 변조 시뮬레이션` : '테이블에서 로그를 선택하세요'}
+                    >
+                        {tampering ? '변조 중…' : selectedLogId ? `⚠️ ID ${selectedLogId} 변조` : '⚠️ 변조 (선택 필요)'}
                     </button>
                 </div>
             </div>
@@ -73,13 +112,33 @@ export default function AuditPage() {
                 <div className={`verify-result ${verify.valid ? 'verify-ok' : 'verify-fail'}`}>
                     <span style={{ fontSize: '1.5rem' }}>{verify.valid ? '✅' : '❌'}</span>
                     <div>
-                        <p>{verify.valid ? '해시 체인 무결성이 확인되었습니다.' : `무결성 오류 발견 — ID: ${verify.firstBrokenId}`}</p>
+                        <p>
+                            {verify.valid
+                                ? '해시 체인 무결성이 확인되었습니다.'
+                                : `무결성 오류 — ID ${verify.firstBrokenLogId}에서 변조 감지 (${verify.reason})`}
+                        </p>
                         <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                            총 {verify.totalChecked}건 검증 완료
+                            총 {verify.verifiedCount}건 검증 완료
                         </span>
                     </div>
                 </div>
             )}
+
+            {tamperResult && (
+                <div className={`verify-result ${tamperResult.chainValid ? 'verify-ok' : 'verify-fail'}`}>
+                    <span style={{ fontSize: '1.5rem' }}>{tamperResult.chainValid ? '✅' : '🔴'}</span>
+                    <div>
+                        <p>{tamperResult.message}</p>
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                            변조된 로그 ID: {tamperResult.tamperedLogId} · 검증: {tamperResult.totalChecked}건
+                        </span>
+                    </div>
+                </div>
+            )}
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                💡 행을 클릭하여 선택 후 <strong>변조 버튼</strong>을 누르면 해시 체인이 깨지는 것을 확인할 수 있습니다.
+            </p>
 
             {loading ? <Spinner /> : logs.length === 0 ? (
                 <EmptyState message="감사 로그가 없습니다." />
@@ -89,6 +148,7 @@ export default function AuditPage() {
                         <table>
                             <thead>
                                 <tr>
+                                    <th style={{ width: '36px' }}></th>
                                     <th>ID</th>
                                     <th>시각</th>
                                     <th>액션</th>
@@ -100,9 +160,22 @@ export default function AuditPage() {
                             </thead>
                             <tbody>
                                 {logs.map((log) => (
-                                    <tr key={log.id}>
+                                    <tr
+                                        key={log.id}
+                                        style={{ cursor: 'pointer', ...rowStyle(log) }}
+                                        onClick={() => setSelectedLogId(log.id === selectedLogId ? null : log.id)}
+                                    >
+                                        <td style={{ textAlign: 'center' }}>
+                                            {log.id === selectedLogId
+                                                ? <span style={{ color: 'var(--accent-cyan)' }}>◉</span>
+                                                : log.id === brokenId
+                                                    ? <span>💥</span>
+                                                    : ''}
+                                        </td>
                                         <td className="td-mono">{log.id}</td>
-                                        <td className="text-secondary" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{formatDate(log.ts)}</td>
+                                        <td className="text-secondary" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
+                                            {formatDate(log.ts)}
+                                        </td>
                                         <td>
                                             <span style={{ fontWeight: 600, fontSize: '0.82rem' }}>{log.action}</span>
                                         </td>
@@ -113,10 +186,20 @@ export default function AuditPage() {
                                             </span>
                                         </td>
                                         <td className="td-mono">
-                                            {log.actorUserId ? log.actorUserId.slice(0, 8) + '…' : log.actorAgentId ? '🤖 ' + log.actorAgentId.slice(0, 6) + '…' : '-'}
+                                            {log.actorUserId
+                                                ? log.actorUserId.slice(0, 8) + '…'
+                                                : log.actorAgentId
+                                                    ? '🤖 ' + log.actorAgentId.slice(0, 6) + '…'
+                                                    : '-'}
                                         </td>
                                         <td>
-                                            <span className="hash-chip" title={log.hash}>{log.hash}</span>
+                                            <span
+                                                className="hash-chip"
+                                                title={log.hash}
+                                                style={log.id === brokenId ? { color: 'var(--red)', borderColor: 'var(--red)' } : {}}
+                                            >
+                                                {log.id === brokenId ? '💥 ' : ''}{log.hash}
+                                            </span>
                                         </td>
                                     </tr>
                                 ))}

@@ -41,6 +41,11 @@ const IconPlug = () => (
         <path d="M6 2.75a.75.75 0 011.5 0V6h5V2.75a.75.75 0 011.5 0V6h.75a.75.75 0 010 1.5H14v1.75A4.75 4.75 0 019.75 14v2.25H12a.75.75 0 010 1.5H8a.75.75 0 010-1.5h.25V14A4.75 4.75 0 014 9.25V7.5h-.75a.75.75 0 010-1.5H4V2.75a.75.75 0 011.5 0V6H6V2.75z" />
     </svg>
 )
+const IconBrain = () => (
+    <svg className="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M10 1a9 9 0 100 18A9 9 0 0010 1zm1 13.5a1 1 0 11-2 0 1 1 0 012 0zm-.25-8.25a.75.75 0 00-1.5 0v4.5a.75.75 0 001.5 0v-4.5z" clipRule="evenodd" />
+    </svg>
+)
 
 export default function Layout({ children, title }: { children: React.ReactNode; title: string }) {
     const { email, role, logout } = useAuthStore()
@@ -90,6 +95,10 @@ export default function Layout({ children, title }: { children: React.ReactNode;
                             <NavLink to="/admin/audit">
                                 <IconList />
                                 감사 로그
+                            </NavLink>
+                            <NavLink to="/admin/anomaly">
+                                <IconBrain />
+                                AI 이상 탐지
                             </NavLink>
                             <NavLink to="/admin/report">
                                 <IconDocument />

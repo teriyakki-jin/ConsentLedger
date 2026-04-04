@@ -9,6 +9,7 @@ import ConsentDetailPage from './pages/ConsentDetailPage'
 import TransfersPage from './pages/TransfersPage'
 import TransferDetailPage from './pages/TransferDetailPage'
 import AuditPage from './pages/admin/AuditPage'
+import AnomalyPage from './pages/admin/AnomalyPage'
 import UsersPage from './pages/admin/UsersPage'
 import AgentsPage from './pages/admin/AgentsPage'
 import ReportPage from './pages/admin/ReportPage'
@@ -57,6 +58,9 @@ export default function App() {
 
         <Route path="/admin/audit" element={
           <ProtectedRoute adminOnly><AuditPage /></ProtectedRoute>
+        } />
+        <Route path="/admin/anomaly" element={
+          <ProtectedRoute adminOnly><AnomalyPage /></ProtectedRoute>
         } />
         <Route path="/admin/users" element={
           <ProtectedRoute adminOnly><UsersPage /></ProtectedRoute>
