@@ -118,7 +118,110 @@ PENDING → APPROVED → EXECUTING → COMPLETED
 
 ## 시스템 아키텍처
 
-<img width="2816" height="1536" alt="Architecture" src="https://github.com/user-attachments/assets/5cc71476-ed95-433e-a0ea-4d81bd5b563d" />
+```mermaid
+graph TB
+    subgraph Client["👤 클라이언트"]
+        Browser["브라우저"]
+        ClaudeDesktop["Claude Desktop\n(MCP 클라이언트)"]
+    end
+
+    subgraph AWS["☁️ AWS (eu-north-1)"]
+        subgraph CDN["CloudFront (HTTPS)"]
+            CF["dgrf2fg1y3qje.cloudfront.net"]
+        end
+
+        subgraph S3["S3 Bucket"]
+            StaticFiles["React 정적 빌드\n(index.html · assets)"]
+        end
+
+        subgraph EC2["EC2 t3.micro · Amazon Linux 2023"]
+            Nginx["nginx :80\n(reverse proxy)"]
+            subgraph Docker["Docker"]
+                SpringBoot["Spring Boot :8080\n(prod profile)"]
+            end
+            Nginx --> SpringBoot
+        end
+
+        subgraph RDS["RDS PostgreSQL 16 (db.t4g.micro)"]
+            DB[("consentledger DB\nFlyway V1-V11")]
+        end
+    end
+
+    subgraph Anthropic["🤖 Anthropic"]
+        Claude["Claude Sonnet API\n(이상 탐지)"]
+    end
+
+    subgraph GitHub["🔧 GitHub"]
+        Actions["GitHub Actions CI/CD"]
+        GHCR["GHCR\nghcr.io/teriyakki-jin/consentledger"]
+    end
+
+    Browser -->|"HTTPS"| CF
+    CF -->|"정적 파일"| StaticFiles
+    CF -->|"캐시 Miss"| S3
+    Browser -->|"HTTP API"| Nginx
+
+    ClaudeDesktop -->|"SSE /sse\n(ADMIN JWT)"| Nginx
+
+    SpringBoot -->|"JPA / JDBC\n(VPC 내부)"| DB
+    SpringBoot -->|"anomaly analyze"| Claude
+
+    Actions -->|"docker build & push"| GHCR
+    Actions -->|"SSH deploy"| EC2
+    Actions -->|"S3 sync + CF Invalidate"| CDN
+    GHCR -->|"docker pull"| EC2
+
+    style AWS fill:#FF9900,color:#fff,stroke:#FF9900
+    style CDN fill:#8B4513,color:#fff,stroke:#8B4513
+    style S3 fill:#3F8624,color:#fff,stroke:#3F8624
+    style EC2 fill:#EC7211,color:#fff,stroke:#EC7211
+    style RDS fill:#3B48CC,color:#fff,stroke:#3B48CC
+    style Docker fill:#2496ED,color:#fff,stroke:#2496ED
+    style Anthropic fill:#D97757,color:#fff,stroke:#D97757
+    style GitHub fill:#24292E,color:#fff,stroke:#24292E
+    style Client fill:#6B7280,color:#fff,stroke:#6B7280
+```
+
+### 인증 흐름
+
+```mermaid
+sequenceDiagram
+    participant U as 사용자 (Browser)
+    participant A as Agent (System)
+    participant API as Spring Boot API
+    participant DB as PostgreSQL
+
+    Note over U,DB: JWT 인증 (사용자)
+    U->>API: POST /auth/login {email, password}
+    API->>DB: 사용자 조회 + BCrypt 검증
+    API-->>U: JWT Bearer Token (15분)
+    U->>API: GET /consents (Authorization: Bearer <JWT>)
+    API-->>U: 동의 목록
+
+    Note over A,DB: API Key 인증 (Agent)
+    A->>API: POST /transfer-requests/{id}/execute\n(X-API-Key: test-api-key-agent-a)
+    API->>DB: SHA-256(api-key) 조회 및 검증
+    API->>DB: 전송 실행 + 감사 로그 기록
+    API-->>A: 실행 결과
+```
+
+### 해시 체인 무결성 구조
+
+```mermaid
+graph LR
+    A["AuditLog #1\nhash = SHA256\n(genesis + ts + action + payload)"]
+    B["AuditLog #2\nhash = SHA256\n(hash#1 + ts + action + payload)"]
+    C["AuditLog #3\nhash = SHA256\n(hash#2 + ts + action + payload)"]
+    D["❌ 위변조 감지\nhash 불일치"]
+
+    A -->|prevHash| B
+    B -->|prevHash| C
+    C -->|검증 실패| D
+
+    style D fill:#EF4444,color:#fff
+```
+
+> DB 트리거(`audit_logs_immutable`)로 UPDATE/DELETE 원천 차단. `GET /admin/audit-logs/verify`로 전체 체인 일괄 검증.
 
 ### 패키지 구조
 
