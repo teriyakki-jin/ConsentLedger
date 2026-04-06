@@ -1,140 +1,106 @@
-# ConsentLedger 프로젝트 면접 경험 정리
-
-## 1. 프로젝트 한 줄 소개
-
-> 개인정보보호법상 **개인정보 전송요구권(마이데이터)**의 동의 관리·감사 흐름을 검증하는 Spring Boot 백엔드 참조 구현입니다.
+# ConsentLedger — 면접 대비 Q&A
 
 ---
 
-## 2. 기술 스택
+## 프로젝트 소개
 
-| 영역 | 사용 기술 |
-|------|----------|
-| Language | Java 17 |
-| Framework | Spring Boot 3.3, Spring Security, Spring Data JPA, Flyway |
-| AI / MCP | Spring AI 1.0.0, Claude Sonnet (Anthropic) |
-| DB | PostgreSQL 16 |
-| Frontend | React 19, TypeScript, Vite, Zustand |
-| Infra | Docker Compose, GitHub Actions CI |
-| Docs | springdoc-openapi (Swagger UI) |
+> **개인정보보호법상 마이데이터 동의·전송 관리 시스템**입니다.
+> SHA-256 해시 체인으로 감사 로그 위변조를 방지하고, Claude AI로 보안 이상 징후를 자동 탐지합니다.
+> Spring Boot 3.3 백엔드 + React 19 프론트엔드를 AWS EC2/RDS/S3/CloudFront에 직접 배포했습니다.
 
 ---
 
-## 3. 핵심 구현 포인트
-
-### 3-1. SHA-256 해시 체인 감사 로그
-
-**문제 인식:** 감사 로그는 삭제·위변조 시 추적이 불가능해야 한다.
-
-**해결 방법:**
-- 각 로그 행마다 `hash = SHA256(prev_hash + record_core_json)` 으로 체인 형성
-- `audit_chain_anchor` 테이블에 마지막 해시를 저장하고 **비관적 락(`SELECT FOR UPDATE`)** 으로 직렬화 → 동시성 환경에서도 해시 순서 보장
-- DB 트리거(`audit_logs_immutable`)로 `DELETE/UPDATE` 자체를 원천 차단
-- `GET /admin/audit-logs/verify` 로 전체 체인을 배치(1,000건)로 순회·검증 (JPA 1차 캐시 `entityManager.clear()` 로 OOM 방지)
-
-**면접 답변 포인트:**
-- "왜 비관적 락?" → 해시가 이전 값에 의존하므로 순서가 틀리면 전체 체인이 깨집니다. 낙관적 락은 재시도 시 hash 충돌 가능성이 있어 비관적 락을 선택했습니다.
-- "PostgreSQL 마이크로초 정밀도 이슈" → `Instant.now().truncatedTo(MICROS)` 로 절삭하지 않으면 Java 나노초와 DB 저장값이 달라 재계산 해시가 불일치하는 버그가 있었습니다.
+## 기술 질문 Q&A
 
 ---
 
-### 3-2. 이중 인증 (JWT + API Key)
+### 해시 체인
 
-- **사용자 인증:** JWT Bearer 토큰 (`Authorization: Bearer <token>`)
-- **Agent 인증:** `X-API-Key` 헤더 (DB에는 SHA-256 해시만 저장, raw key 미보관)
-- Spring Security `OncePerRequestFilter` 를 두 개 체이닝 → 토큰 종류에 따라 `UsernamePasswordAuthenticationToken` / `ApiKeyAuthenticationToken` 으로 분기
-- RBAC: `USER`, `ADMIN`, `AGENT` 3가지 역할
+**Q. 감사 로그에 왜 해시 체인을 적용했나요?**
 
----
+> 감사 로그는 보안 사고 조사의 핵심 증거인데, 일반 DB 레코드는 누군가 DELETE하거나 UPDATE할 수 있습니다. SHA-256 해시 체인을 적용하면 중간 로그 하나만 수정해도 그 이후 모든 해시가 달라져 위변조가 즉시 탐지됩니다. 블록체인의 핵심 개념을 DB 레벨에서 구현한 것입니다.
 
-### 3-3. 전송 요청 상태 머신 (State Machine)
+**Q. 비관적 잠금을 선택한 이유가 있나요?**
 
-```
-REQUESTED → APPROVED → COMPLETED
-         ↓          ↓
-        DENIED     FAILED
-```
+> 해시 계산이 이전 로그의 해시값에 의존합니다. 낙관적 잠금으로 재시도할 경우, 재시도 시점에 다른 로그가 이미 삽입됐다면 prevHash 값이 바뀌어 해시 체인이 깨집니다. 비관적 잠금으로 직렬화하면 항상 최신 prevHash를 읽을 수 있어 체인 정합성이 보장됩니다.
 
-- `TransferStateMachine` 컴포넌트에 허용 전이 Map을 선언적으로 정의
-- 불가능한 전이 시도 시 즉시 `BusinessException` 발생
-- **멱등성(Idempotency):** `REQUIRES_NEW` 트랜잭션으로 이미 승인된 요청에 대한 중복 호출을 안전하게 처리
+**Q. PostgreSQL 마이크로초 이슈가 뭔가요?**
+
+> Java의 `Instant.now()`는 나노초까지 표현하지만, PostgreSQL `timestamptz`는 마이크로초까지만 저장합니다. DB에 저장된 후 다시 읽으면 나노초가 잘려 해시 재계산 시 값이 달라지는 버그가 있었습니다. `truncatedTo(ChronoUnit.MICROS)`로 저장 전에 절삭해서 해결했습니다.
 
 ---
 
-### 3-4. Spring AI MCP 서버 통합
+### 인증/보안
 
-- `GET /sse` 엔드포인트로 Claude Desktop 등 AI 클라이언트와 SSE 연결
-- `@Tool` 어노테이션 기반으로 6개 도구 등록: `getAuditLogs`, `verifyAuditChain`, `getConsentsByUser`, `getTransferRequests`, `listUsers`, `analyzeAnomalies`
-- Admin JWT 인증 후에만 SSE 접근 가능
+**Q. JWT와 API Key 이중 인증을 왜 구현했나요?**
 
----
+> 사람이 사용하는 웹 UI와 시스템 간 자동화 Agent의 인증 요구사항이 다릅니다. 사람은 세션 기반의 JWT(만료, 갱신)가 적합하고, Agent는 서버 간 통신에서 헤더로 전달하는 API Key가 더 자연스럽습니다. Spring Security 필터 체인에서 `Authorization` 헤더와 `X-API-Key` 헤더를 각각 처리하도록 체이닝했습니다.
 
-### 3-5. AI 이상 탐지 (Claude Sonnet 연동)
+**Q. API Key를 DB에 평문으로 저장하지 않는 이유는?**
 
-**기능:** 최근 N일간 감사 로그를 Claude에게 전달 → 4가지 이상 패턴 분석
-
-| 패턴 | 설명 |
-|------|------|
-| ABNORMAL_HOURS | 비업무시간(22:00-06:00 UTC) / 주말 행위 |
-| PRIVILEGE_ABUSE | 과도한 관리자 작업, 벌크 오퍼레이션 |
-| DATA_EXFILTRATION | 단시간 대량 전송, 비정상 접근 패턴 |
-| ACCOUNT_TAKEOVER | 새 IP 로그인, 실패 후 성공, 동시 세션 |
-
-**보안 고려사항:**
-- LLM에 전달하는 로그에서 `payloadJson` 제거 (개인정보 보호)
-- 모든 문자열 필드 **Prompt Injection 방지 sanitize** (제어문자·개행 제거, 200자 제한)
-- 분석 건수 상한(`max-logs-per-analysis: 500`) 설정 → 토큰 남용 방지
-- AI 호출 실패 시 graceful degradation (빈 findings + `ANALYSIS_FAILED` 상태 반환)
+> DB가 유출되더라도 실제 API Key 값을 알 수 없게 하기 위해서입니다. 비밀번호를 BCrypt로 저장하는 것과 같은 원리입니다. 요청이 들어오면 헤더의 raw key를 SHA-256 해시로 변환한 뒤 DB와 비교합니다.
 
 ---
 
-### 3-6. 테스트 전략
+### 동시성
 
-- **단위 테스트 99개** (`@ExtendWith(MockitoExtension.class)`)
-- **통합 테스트** (`@SpringBootTest + Testcontainers` PostgreSQL, `-Dintegration.tests.enabled=true`)
-- **CI:** GitHub Actions (PR마다 자동 실행)
+**Q. 전송 요청 상태 머신에서 동시 승인 문제는 어떻게 처리했나요?**
 
----
+> `approve`와 `execute` 엔드포인트에서 `findByIdForUpdate()`로 비관적 잠금을 겁니다. 두 요청이 동시에 들어와도 첫 번째만 락을 획득하고 상태를 변경하며, 두 번째는 락 해제 후 변경된 상태를 보고 이미 처리됐음을 확인해 예외를 반환합니다.
 
-## 4. 트러블슈팅 경험 (STAR 형식)
+**Q. 멱등성은 어떻게 보장했나요?**
 
-### T1. 해시 불일치 버그
-
-- **Situation:** 해시 체인 검증이 로컬에서는 통과하는데 DB 재시작 후 실패
-- **Task:** 해시가 저장·재계산 간에 달라지는 원인 파악
-- **Action:** `Instant` 의 나노초 정밀도 vs PostgreSQL 마이크로초 정밀도 차이 확인 → `.truncatedTo(ChronoUnit.MICROS)` 추가
-- **Result:** 체인 검증 100% 통과
-
-### T2. 동시 요청 시 해시 체인 순서 보장
-
-- **Situation:** 부하 테스트에서 두 로그의 `prev_hash`가 동일한 현상 발생
-- **Task:** 감사 로그 기록의 직렬화 필요
-- **Action:** `audit_chain_anchor` 단일 행에 `SELECT FOR UPDATE` 비관적 락 적용
-- **Result:** 동시성 환경에서도 해시 체인 연속성 보장
-
-### T3. 독성 트랜잭션(Poisoned Transaction) 방지
-
-- **Situation:** 승인 중 예외 발생 시 감사 로그까지 롤백되어 기록이 사라지는 문제
-- **Task:** 감사 로그는 성공·실패 무관하게 항상 기록되어야 함
-- **Action:** `REQUIRES_NEW` 전파 속성으로 감사 로그 트랜잭션 분리
-- **Result:** 비즈니스 로직 실패 시에도 감사 기록 보존
+> 같은 전송 요청을 중복 생성해도 201을 반환합니다. `REQUIRES_NEW` 트랜잭션으로 중복 삽입을 격리하고, 이미 존재하는 경우 기존 데이터를 그대로 반환합니다. HTTP 상태 코드가 항상 201이기 때문에 클라이언트가 재시도해도 안전합니다.
 
 ---
 
-## 5. "어떤 점을 배웠나요?" 답변 예시
+### Spring AI / MCP
 
-> "데이터 무결성을 코드로 보장하는 것과 DB 제약으로 보장하는 것의 차이를 직접 경험했습니다. 해시 체인은 위변조 감지를 위한 것이고, DB 트리거는 실수 또는 직접 쿼리로 인한 삭제를 막기 위한 것으로 서로 다른 위협 모델을 대응합니다. 또한 LLM을 프로덕션에 연동할 때 Prompt Injection 방지, 토큰 비용 제어, 응답 파싱 실패에 대한 graceful degradation이 모두 필수적이라는 것을 배웠습니다."
+**Q. MCP 서버를 왜 구현했나요?**
+
+> Claude Desktop 같은 AI 클라이언트가 백엔드 시스템과 직접 상호작용할 수 있도록 하기 위해서입니다. REST API를 LLM이 직접 호출하려면 API 스펙을 프롬프트에 전부 넣어야 하는데, MCP는 표준화된 도구 인터페이스를 제공합니다. "지난 7일 로그 분석해줘"라고 말하면 Claude가 `analyzeAnomalies(7)` 도구를 자동으로 호출합니다.
+
+**Q. AI 분석 시 개인정보 보호는 어떻게 했나요?**
+
+> 감사 로그의 `payloadJson`에는 동의 내용이나 사용자 데이터가 포함될 수 있어 AI에게 전달하지 않습니다. 액션 타입, 타임스탬프, 사용자 ID 정도의 메타데이터만 전달해 패턴 분석을 요청합니다.
 
 ---
 
-## 6. 자주 나올 질문 & 예상 답변 요점
+### AWS / 인프라
 
-| 질문 | 핵심 답변 |
-|------|----------|
-| 왜 JPA + Flyway 조합? | 엔터티 변경과 스키마 변경을 독립적으로 버전 관리하기 위해. 팀 협업 시 마이그레이션 충돌 방지 |
-| 비관적 락 vs 낙관적 락 선택 기준 | 해시 체인처럼 순서가 결과에 영향을 미치는 경우엔 비관적 락. 충돌 빈도 낮고 재시도 허용되면 낙관적 락 |
-| Spring AI MCP를 선택한 이유 | Claude Desktop 등 표준 MCP 클라이언트와 zero-config 연동 가능. 직접 HTTP 클라이언트 구현 대비 도구 등록/스키마 자동화 |
-| RBAC 설계 | USER(자기 데이터 조회·동의), ADMIN(전체 감사·관리), AGENT(API Key로 전송 요청 실행) — 최소 권한 원칙 |
-| 테스트에서 가장 어려웠던 점 | Spring Security 컨텍스트 수동 설정. `@WithMockUser`는 커스텀 `UserDetails` 와 호환 안 돼서 `SecurityContextHolder`를 직접 셋팅 |
-| API Key는 왜 해시로만 저장? | 유출 시 원문 복원 불가. HMAC 대신 SHA-256 단방향 해시로 저장하고 요청마다 해싱 후 비교 |
-| 이상 탐지에서 payloadJson을 왜 제외? | 개인정보(동의 내용, 전송 데이터 등)가 포함될 수 있어 외부 LLM API 전송 시 개인정보 최소화 원칙 적용 |
+**Q. 개인 프로젝트에서 AWS를 직접 구성한 경험을 설명해주세요.**
+
+> EC2에 Amazon Linux 2023을 올리고 Docker로 Spring Boot와 nginx를 컨테이너화해 운영했습니다. RDS PostgreSQL은 VPC 내부에서만 접근 가능하도록 보안 그룹을 설정했고, 프론트엔드는 Vite로 빌드해 S3에 업로드한 뒤 CloudFront로 HTTPS를 적용했습니다. GitHub Actions로 push 시 자동 빌드·배포 파이프라인까지 구성했습니다.
+
+**Q. 배포 과정에서 가장 힘들었던 문제는?**
+
+> RDS 보안 그룹 설정이 가장 까다로웠습니다. EC2에서 RDS로 TCP 연결이 계속 timeout이 났는데, 원인은 RDS 보안 그룹 인바운드 소스가 EC2 보안 그룹이 아니라 default SG 자기 자신으로 설정됐던 것이었습니다. AWS 콘솔에서 EC2 연결 설정 기능으로 전용 SG를 자동 생성해 해결했습니다. 또 RDS 엔드포인트에 숫자 1과 소문자 i 오타가 있어서 DNS NXDOMAIN이 났던 것도 있었습니다.
+
+**Q. CI/CD 파이프라인은 어떻게 구성했나요?**
+
+> GitHub Actions 4단계로 구성했습니다. `test` → `publish`(Docker 빌드 + GHCR 푸시) → `deploy-backend`(EC2 SSH) / `deploy-frontend`(S3 + CloudFront) 병렬 실행입니다. Secrets가 설정되지 않으면 해당 Job을 자동 skip해 로컬 환경에서도 CI가 깨지지 않게 설계했습니다.
+
+---
+
+### 테스트
+
+**Q. 145개 테스트를 어떻게 구성했나요?**
+
+> 단위 테스트 119개는 Mockito로 의존성을 모킹해 서비스·컨트롤러 로직만 검증합니다. 통합 테스트 26개는 Testcontainers로 실제 PostgreSQL을 띄워 Flyway 마이그레이션, DB 트리거, JSONB 타입까지 실제 환경과 동일하게 테스트합니다. 특히 해시 체인 무결성은 트리거가 있어야 검증 가능해 통합 테스트가 필수였습니다.
+
+**Q. Testcontainers를 선택한 이유는?**
+
+> H2 인메모리 DB로는 PostgreSQL 전용 기능(JSONB, 트리거, `ON CONFLICT`)을 테스트할 수 없습니다. Testcontainers는 실제 PostgreSQL 16 컨테이너를 테스트 시 기동하므로 운영 환경과 동일한 조건에서 검증할 수 있습니다. CI에서도 Docker-in-Docker로 정상 동작합니다.
+
+---
+
+## 자주 나오는 추가 질문
+
+**Q. 이 프로젝트에서 가장 어려웠던 부분은?**
+> 해시 체인의 동시성 문제였습니다. 처음에는 낙관적 잠금으로 구현했는데, 재시도 시 prevHash가 이미 다른 로그에 사용돼 체인이 깨지는 문제가 발생했습니다. 데이터 정합성이 중요한 경우 낙관적 잠금의 재시도 전략이 오히려 독이 될 수 있다는 걸 배웠습니다.
+
+**Q. 아쉬운 점이 있다면?**
+> JWT Refresh Token이 없어 15분마다 재로그인이 필요한 점, 프론트엔드 테스트 코드가 없는 점, CloudFront와 EC2 사이에 ALB를 두지 않아 EC2 IP가 직접 노출된 점입니다. 운영 환경이라면 ALB + 도메인으로 개선하겠습니다.
+
+**Q. 혼자 만든 프로젝트인가요?**
+> 네, 기획부터 백엔드·프론트엔드·인프라까지 전부 혼자 구현했습니다. AI 코딩 도구(Claude Code)를 적극 활용했으며, 설계 결정과 트러블슈팅은 직접 했습니다.
