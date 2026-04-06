@@ -193,34 +193,8 @@ src/main/java/com/consentledger/
 
 ### 배포 아키텍처
 
-```
-사용자 (HTTPS)
-     │
-     ▼
-┌─────────────────────────────┐
-│   CloudFront (HTTPS → HTTP) │  캐싱, SSL 종료
-└────────────┬────────────────┘
-             │
-     ┌───────▼────────┐
-     │   S3 Bucket    │  React 정적 빌드 (index.html 캐시 없음)
-     └────────────────┘
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/9b14e80e-b7af-46cf-a976-02ee2d12b42f" />
 
-   API 요청 (백엔드 직접 호출: http://EC2-IP)
-             │
-     ┌───────▼─────────────────────────────┐
-     │   EC2 (eu-north-1, t3.micro)         │
-     │   ┌─────────────────────────────┐   │
-     │   │  nginx :80                   │   │
-     │   │  ↓ proxy_pass               │   │
-     │   │  Spring Boot :8080 (Docker)  │   │
-     │   └─────────────────────────────┘   │
-     └───────────────────┬─────────────────┘
-                         │ 5432 (VPC 내부)
-               ┌─────────▼──────────┐
-               │  RDS PostgreSQL 16  │
-               │  (db.t4g.micro)     │
-               └────────────────────┘
-```
 
 ### AWS 리소스 현황
 
