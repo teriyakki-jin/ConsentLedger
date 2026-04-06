@@ -1,0 +1,42 @@
+# Production override: uses AWS RDS instead of local postgres container.
+# Usage: docker compose -f docker-compose.rds.yml up -d
+#
+# Required .env values:
+#   DB_HOST  → RDS endpoint (e.g. xxx.ap-northeast-2.rds.amazonaws.com)
+#   DB_PORT  → 5432
+#   DB_NAME, DB_USERNAME, DB_PASSWORD → RDS credentials
+
+services:
+  app:
+    image: ghcr.io/teriyakki-jin/consentledger:${IMAGE_TAG:-latest}
+    container_name: consentledger-app
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-consentledger}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: consentledger-nginx
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/api-only.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped

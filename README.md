@@ -302,7 +302,7 @@ docker image prune -f
 
 | Secret | 설명 |
 |--------|------|
-| `DEPLOY_HOST` | 서버 IP 또는 호스트명 |
+| `DEPLOY_HOST` | EC2 IP 또는 호스트명 |
 | `DEPLOY_USER` | SSH 사용자명 |
 | `DEPLOY_KEY` | SSH 개인키 (PEM 형식) |
 | `DEPLOY_PORT` | SSH 포트 (기본 22, 생략 가능) |
@@ -312,7 +312,7 @@ docker image prune -f
 **SSH 키 생성:**
 ```bash
 ssh-keygen -t ed25519 -C "github-actions-deploy" -f deploy_key
-cat deploy_key.pub >> ~/.ssh/authorized_keys  # 서버에서 실행
+cat deploy_key.pub >> ~/.ssh/authorized_keys  # EC2에서 실행
 cat deploy_key                                 # 출력값을 DEPLOY_KEY secret에 저장
 ```
 
@@ -326,7 +326,113 @@ apt install certbot python3-certbot-nginx
 certbot --nginx -d your-domain.com
 ```
 
-**또는** AWS ALB, Cloudflare 등 외부 로드밸런서에서 TLS 종료 후 nginx로 HTTP 포워딩.
+**또는** AWS CloudFront / ALB에서 TLS 종료 후 EC2로 HTTP 포워딩.
+
+---
+
+## AWS 배포 (EC2 + RDS + S3 + CloudFront)
+
+### 아키텍처
+
+```
+사용자 (HTTPS)
+    │
+    ▼
+CloudFront
+    ├── /*       → S3 버킷 (React 정적 빌드)
+    └── /api/*   → EC2 (nginx → Spring Boot)
+                          │
+                        RDS (PostgreSQL)
+```
+
+### AWS 리소스 설정
+
+#### 1. RDS (PostgreSQL 16)
+```
+엔진: PostgreSQL 16
+인스턴스: db.t3.micro (프리티어)
+DB명: consentledger
+포트: 5432
+퍼블릭 액세스: 비활성 (EC2 보안 그룹에서만 허용)
+```
+
+#### 2. EC2
+```
+AMI: Amazon Linux 2023 또는 Ubuntu 22.04
+인스턴스: t3.small 이상 권장
+보안 그룹 인바운드:
+  - 22 (SSH) — 내 IP만
+  - 80 (HTTP) — 0.0.0.0/0 (CloudFront에서 포워딩)
+```
+
+**초기 셋업 스크립트:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/teriyakki-jin/ConsentLedger/main/infra/aws/setup.sh | sudo bash
+```
+
+#### 3. S3 버킷
+```
+버킷 정책: CloudFront OAC(Origin Access Control)만 허용
+정적 웹사이트 호스팅: 비활성 (CloudFront 통해서만 접근)
+```
+
+#### 4. CloudFront
+```
+오리진 1: S3 버킷 (OAC 설정)
+오리진 2: EC2 DNS (HTTP, 포트 80)
+
+Behavior 설정:
+  - /api/*  → EC2 오리진, 캐시 없음 (Cache-Control: no-store)
+  - /sse    → EC2 오리진, 캐시 없음, 커스텀 Origin Timeout: 3600s
+  - /*      → S3 오리진, 캐시 활성화
+```
+
+### GitHub Secrets 전체 목록 (AWS 포함)
+
+| Secret | 설명 | 필수 |
+|--------|------|:----:|
+| `DEPLOY_HOST` | EC2 퍼블릭 IP | |
+| `DEPLOY_USER` | SSH 사용자 (`ec2-user` / `ubuntu`) | |
+| `DEPLOY_KEY` | SSH 개인키 | |
+| `AWS_ACCESS_KEY_ID` | IAM 액세스 키 | |
+| `AWS_SECRET_ACCESS_KEY` | IAM 시크릿 키 | |
+| `AWS_REGION` | 리전 (예: `ap-northeast-2`) | |
+| `S3_BUCKET_NAME` | 프론트엔드 S3 버킷명 | |
+| `CLOUDFRONT_DISTRIBUTION_ID` | CloudFront 배포 ID | |
+| `VITE_API_BASE_URL` | 백엔드 API URL (예: `https://xxx.cloudfront.net`) | |
+
+> `S3_BUCKET_NAME`이 설정되지 않으면 `deploy-frontend` job이 자동으로 skip됩니다.
+
+**IAM 권한 (최소):**
+```json
+{
+  "Effect": "Allow",
+  "Action": [
+    "s3:PutObject", "s3:DeleteObject", "s3:ListBucket",
+    "cloudfront:CreateInvalidation"
+  ],
+  "Resource": [
+    "arn:aws:s3:::YOUR_BUCKET/*",
+    "arn:aws:cloudfront::*:distribution/YOUR_DIST_ID"
+  ]
+}
+```
+
+### EC2에서 RDS 사용 (.env 설정)
+```bash
+# /opt/consentledger/.env
+DB_HOST=xxx.ap-northeast-2.rds.amazonaws.com
+DB_PORT=5432
+DB_NAME=consentledger
+DB_USERNAME=consentledger
+DB_PASSWORD=<rds-password>
+JWT_SECRET=<openssl rand -hex 32>
+CORS_ALLOWED_ORIGINS=https://xxx.cloudfront.net
+OPENAI_API_KEY=<optional>
+
+# RDS compose 사용
+docker compose -f docker-compose.rds.yml up -d
+```
 
 ---
 
@@ -338,20 +444,22 @@ certbot --nginx -d your-domain.com
 push to main
     │
     ▼
-[test] ─── 단위 + 통합 테스트 (Testcontainers)
-    │ 성공
-    ▼
-[publish] ─── Docker 빌드 → ghcr.io/teriyakki-jin/consentledger:latest push
-    │ 성공 + DEPLOY_HOST secret 설정됨
-    ▼
-[deploy] ─── SSH로 서버 접속 → docker compose pull & up
+[test] ─── 단위 + 통합 테스트
+    │
+    ├──▶ [publish] ─── Docker 빌드 → ghcr.io push
+    │         │ DEPLOY_HOST 설정됨
+    │         └──▶ [deploy-backend] ─── EC2 SSH → docker compose rds up
+    │
+    └──▶ [deploy-frontend] ─── Vite 빌드 → S3 sync → CloudFront invalidation
+                                (S3_BUCKET_NAME 설정됨)
 ```
 
 | Job | 조건 | 내용 |
 |-----|------|------|
 | test | 모든 push/PR | 단위 테스트 + 통합 테스트 (Testcontainers) |
 | publish | main push + test 성공 | Docker 빌드 + `ghcr.io` push |
-| deploy | main push + publish 성공 + `DEPLOY_HOST` 설정됨 | SSH 자동 배포 |
+| deploy-frontend | main push + test 성공 + `S3_BUCKET_NAME` 설정됨 | Vite 빌드 → S3 sync → CloudFront invalidation |
+| deploy-backend | main push + publish 성공 + `DEPLOY_HOST` 설정됨 | SSH → EC2 `docker compose -f docker-compose.rds.yml up` |
 
 > **GitHub Actions 권한 설정**: Settings → Actions → General → Workflow permissions → "Read and write permissions" 활성화 필요 (GHCR push를 위해)
 
