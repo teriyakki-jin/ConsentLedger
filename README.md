@@ -118,69 +118,8 @@ PENDING → APPROVED → EXECUTING → COMPLETED
 
 ## 시스템 아키텍처
 
-```mermaid
-graph TB
-    subgraph Client["👤 클라이언트"]
-        Browser["브라우저"]
-        ClaudeDesktop["Claude Desktop\n(MCP 클라이언트)"]
-    end
+<img width="2816" height="1536" alt="Gemini_Generated_Image_6w9mbj6w9mbj6w9m" src="https://github.com/user-attachments/assets/52c69349-d942-413d-b59f-06cc320f05cd" />
 
-    subgraph AWS["☁️ AWS (eu-north-1)"]
-        subgraph CDN["CloudFront (HTTPS)"]
-            CF["dgrf2fg1y3qje.cloudfront.net"]
-        end
-
-        subgraph S3["S3 Bucket"]
-            StaticFiles["React 정적 빌드\n(index.html · assets)"]
-        end
-
-        subgraph EC2["EC2 t3.micro · Amazon Linux 2023"]
-            Nginx["nginx :80\n(reverse proxy)"]
-            subgraph Docker["Docker"]
-                SpringBoot["Spring Boot :8080\n(prod profile)"]
-            end
-            Nginx --> SpringBoot
-        end
-
-        subgraph RDS["RDS PostgreSQL 16 (db.t4g.micro)"]
-            DB[("consentledger DB\nFlyway V1-V11")]
-        end
-    end
-
-    subgraph Anthropic["🤖 Anthropic"]
-        Claude["Claude Sonnet API\n(이상 탐지)"]
-    end
-
-    subgraph GitHub["🔧 GitHub"]
-        Actions["GitHub Actions CI/CD"]
-        GHCR["GHCR\nghcr.io/teriyakki-jin/consentledger"]
-    end
-
-    Browser -->|"HTTPS"| CF
-    CF -->|"정적 파일"| StaticFiles
-    CF -->|"캐시 Miss"| S3
-    Browser -->|"HTTP API"| Nginx
-
-    ClaudeDesktop -->|"SSE /sse\n(ADMIN JWT)"| Nginx
-
-    SpringBoot -->|"JPA / JDBC\n(VPC 내부)"| DB
-    SpringBoot -->|"anomaly analyze"| Claude
-
-    Actions -->|"docker build & push"| GHCR
-    Actions -->|"SSH deploy"| EC2
-    Actions -->|"S3 sync + CF Invalidate"| CDN
-    GHCR -->|"docker pull"| EC2
-
-    style AWS fill:#FF9900,color:#fff,stroke:#FF9900
-    style CDN fill:#8B4513,color:#fff,stroke:#8B4513
-    style S3 fill:#3F8624,color:#fff,stroke:#3F8624
-    style EC2 fill:#EC7211,color:#fff,stroke:#EC7211
-    style RDS fill:#3B48CC,color:#fff,stroke:#3B48CC
-    style Docker fill:#2496ED,color:#fff,stroke:#2496ED
-    style Anthropic fill:#D97757,color:#fff,stroke:#D97757
-    style GitHub fill:#24292E,color:#fff,stroke:#24292E
-    style Client fill:#6B7280,color:#fff,stroke:#6B7280
-```
 
 ### 인증 흐름
 
