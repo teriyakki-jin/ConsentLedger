@@ -101,16 +101,27 @@ jobs:
     name: Deploy Frontend to S3 + CloudFront
     runs-on: ubuntu-latest
     needs: test
-    if: >-
-      github.ref == 'refs/heads/main' &&
-      github.event_name == 'push' &&
-      secrets.S3_BUCKET_NAME != ''
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
+      - name: Check required secrets
+        id: check
+        run: |
+          if [ -z "$S3_BUCKET" ]; then
+            echo "S3_BUCKET_NAME secret not set — skipping deploy"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          S3_BUCKET: ${{ secrets.S3_BUCKET_NAME }}
+
       - name: Checkout
+        if: steps.check.outputs.skip == 'false'
         uses: actions/checkout@v4
 
       - name: Set up Node.js
+        if: steps.check.outputs.skip == 'false'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -118,16 +129,19 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
+        if: steps.check.outputs.skip == 'false'
         run: npm ci
         working-directory: frontend
 
       - name: Build frontend
+        if: steps.check.outputs.skip == 'false'
         run: npm run build
         working-directory: frontend
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
 
       - name: Configure AWS credentials
+        if: steps.check.outputs.skip == 'false'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -135,6 +149,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Sync to S3
+        if: steps.check.outputs.skip == 'false'
         run: |
           aws s3 sync frontend/dist s3://${{ secrets.S3_BUCKET_NAME }} \
             --delete \
@@ -144,24 +159,40 @@ jobs:
             --cache-control "no-cache,no-store,must-revalidate"
 
       - name: Invalidate CloudFront cache
-        if: secrets.CLOUDFRONT_DISTRIBUTION_ID != ''
+        if: steps.check.outputs.skip == 'false'
+        env:
+          DIST_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
         run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
-            --paths "/*"
+          if [ -n "$DIST_ID" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id "$DIST_ID" \
+              --paths "/*"
+          else
+            echo "CLOUDFRONT_DISTRIBUTION_ID not set — skipping invalidation"
+          fi
 
   deploy-backend:
     name: Deploy Backend to EC2
     runs-on: ubuntu-latest
     needs: publish
-    if: >-
-      github.ref == 'refs/heads/main' &&
-      github.event_name == 'push' &&
-      secrets.DEPLOY_HOST != ''
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: production
 
     steps:
+      - name: Check required secrets
+        id: check
+        run: |
+          if [ -z "$DEPLOY_HOST" ]; then
+            echo "DEPLOY_HOST secret not set — skipping deploy"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+
       - name: Deploy via SSH
+        if: steps.check.outputs.skip == 'false'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
