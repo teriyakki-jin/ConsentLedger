@@ -39,6 +39,7 @@
 - [MCP 서버 연동](#mcp-서버-연동)
 - [테스트](#테스트)
 - [환경변수](#환경변수)
+- [사용 시나리오](#사용-시나리오)
 
 ---
 
@@ -204,6 +205,23 @@ src/main/java/com/consentledger/
 | RDS | PostgreSQL 16, db.t4g.micro | eu-north-1 |
 | S3 | consentledger-frontend | eu-north-1 |
 | CloudFront | E16PKAHHTR1AYQ | Global |
+
+### CloudFront 동작(Behavior) 구성
+
+프론트엔드(S3)와 백엔드(EC2)를 단일 CloudFront 배포로 통합합니다.
+
+| 경로 패턴 | 오리진 | 설명 |
+|-----------|--------|------|
+| `/api/*` | EC2 (nginx) | API 요청 → Spring Boot, nginx에서 `/api/` prefix 제거 |
+| `/*` (기본) | S3 | React SPA 정적 파일 서빙 |
+
+```
+브라우저 → CloudFront
+  ├── /api/* → EC2 nginx → Spring Boot (rewrite: /api/auth/login → /auth/login)
+  └── /*     → S3 (index.html, assets)
+```
+
+> **캐시 정책**: `/api/*` 동작은 `CachingDisabled` + `AllViewer` 원본 요청 정책 적용 (Authorization 헤더 포함 전달)
 
 ### EC2 초기 설정
 
@@ -447,6 +465,53 @@ Claude Desktop `claude_desktop_config.json`:
 | `SPRING_PROFILES_ACTIVE` | `local` | `prod` 설정 시 파일 로그, JSON 포맷 |
 | `CORS_ALLOWED_ORIGINS` | `localhost:*` | CORS 허용 origin (콤마 구분) |
 | `OPENAI_API_KEY` | — | AI 이상탐지용 (미설정 시 graceful degradation) |
+
+---
+
+## 사용 시나리오
+
+**Live Demo**: https://dgrf2fg1y3qje.cloudfront.net
+
+### 👤 USER — 동의 및 전송 요청 관리
+
+| 단계 | 동작 |
+|------|------|
+| 1 | 로그인 (`user@consentledger.com` / `user1234`) |
+| 2 | **동의 추가** — 어떤 기관에 어떤 데이터를 제공할지 동의 생성 |
+| 3 | **전송 요청 생성** — A기관 → B기관으로 내 데이터 전송 요청 |
+| 4 | 요청 상태 확인 (`PENDING` → `APPROVED` → `COMPLETED`) |
+| 5 | 필요 시 **동의 철회** |
+
+### 🔑 ADMIN — 승인·감사·AI 분석
+
+| 단계 | 동작 |
+|------|------|
+| 1 | 로그인 (`admin@consentledger.com` / `admin1234`) |
+| 2 | **전송 요청 승인** — USER 요청을 APPROVE → EXECUTE 처리 |
+| 3 | **감사 로그 조회** — 모든 시스템 활동 이력 확인 |
+| 4 | **해시 체인 검증** — `GET /admin/audit-logs/verify`로 위변조 여부 일괄 확인 |
+| 5 | **데모 시나리오 생성** — 이상 탐지 패턴 로그 43개 자동 생성 |
+| 6 | **AI 이상 탐지** — Claude Sonnet이 보안 패턴 자동 분석 후 리포트 반환 |
+| 7 | **PDF 리포트 다운로드** — `GET /admin/reports/audit` |
+
+### 🤖 AGENT — API Key 인증 자동화
+
+```bash
+# 전송 요청 실행 (Agent 권한)
+curl -X POST http://localhost:8080/transfer-requests/{id}/execute \
+  -H "X-API-Key: test-api-key-agent-a"
+```
+
+### 🛠 해시 체인 위변조 시뮬레이션 (데모용)
+
+```bash
+# 1. 위변조 주입
+POST /admin/demo/tamper/{logId}
+
+# 2. 체인 검증 → 위변조 감지 확인
+GET /admin/audit-logs/verify
+# → valid: false, invalidFromId: {logId}
+```
 
 ---
 
