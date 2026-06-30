@@ -1,0 +1,55 @@
+name: Kubernetes Security CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        if: hashFiles('pom.xml') != '' || hashFiles('build.gradle') != '' || hashFiles('build.gradle.kts') != ''
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Test Spring Boot application with Gradle
+        if: hashFiles('build.gradle') != '' || hashFiles('build.gradle.kts') != ''
+        run: ./gradlew test --no-daemon
+
+      - name: Test Spring Boot application with Maven
+        if: hashFiles('pom.xml') != ''
+        run: mvn test
+
+      - name: Build Docker image
+        if: hashFiles('Dockerfile') != ''
+        run: docker build -t consentledger-backend:${{ github.sha }} .
+
+      - name: Run Trivy image scan
+        if: hashFiles('Dockerfile') != ''
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: consentledger-backend:${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Install kubeconform
+        run: |
+          curl -L -o kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar -xzf kubeconform.tar.gz
+          sudo mv kubeconform /usr/local/bin/kubeconform
+
+      - name: Validate Kubernetes manifests
+        run: kubeconform -strict -summary -ignore-missing-schemas k8s

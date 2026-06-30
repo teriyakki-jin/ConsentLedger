@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: consentledger
+  labels:
+    app.kubernetes.io/name: consentledger
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: consentledger
+    app.kubernetes.io/component: database
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
