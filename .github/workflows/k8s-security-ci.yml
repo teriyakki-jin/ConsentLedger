@@ -23,6 +23,10 @@ jobs:
           java-version: "17"
           cache: gradle
 
+      - name: Make Gradle wrapper executable
+        if: hashFiles('gradlew') != ''
+        run: chmod +x gradlew
+
       - name: Test Spring Boot application with Gradle
         if: hashFiles('build.gradle') != '' || hashFiles('build.gradle.kts') != ''
         run: ./gradlew test --no-daemon
@@ -53,3 +57,4 @@ jobs:
 
       - name: Validate Kubernetes manifests
         run: kubeconform -strict -summary -ignore-missing-schemas k8s
+
