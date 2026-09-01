@@ -19,9 +19,7 @@
   <img src="https://img.shields.io/badge/coverage-80%25+-brightgreen?style=flat-square"/>
 </p>
 
-<p align="center">
-  <strong>🌐 Live Demo: <a href="https://dgrf2fg1y3qje.cloudfront.net">https://dgrf2fg1y3qje.cloudfront.net</a></strong>
-</p>
+
 
 ---
 
