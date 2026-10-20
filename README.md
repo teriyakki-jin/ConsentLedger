@@ -16,7 +16,7 @@
     <img src="https://github.com/teriyakki-jin/ConsentLedger/actions/workflows/ci.yml/badge.svg" alt="CI/CD"/>
   </a>
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/>
-  
+
 </p>
 
 
